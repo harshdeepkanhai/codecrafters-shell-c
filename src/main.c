@@ -1,8 +1,11 @@
 #include <stdio.h>
-#include <stdlib.h>   // getenv, exit, atoi, free
-#include <string.h>   // strcmp, strncmp, strcspn, strtok, strdup
-#include <unistd.h>   // access, X_OK
-#include <limits.h>   // PATH_MAX
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>     // access, X_OK, fork, execv, _exit
+#include <limits.h>     // PATH_MAX
+#include <sys/wait.h>   // waitpid
+
+#define MAX_ARGS 64
 
 static const char *builtins[] = {"echo", "exit", "type"};
 static const size_t builtin_count = sizeof(builtins) / sizeof(builtins[0]);
@@ -16,30 +19,67 @@ static int is_builtin(const char *name) {
     return 0;
 }
 
-// If an executable named `name` is found in PATH, write its full path into
-// `out` and return 1. Otherwise return 0.
+// Find an executable named `name` in PATH. On success, fill `out` and return 1.
 static int find_in_path(const char *name, char *out, size_t out_size) {
     const char *path = getenv("PATH");
     if (path == NULL) {
         return 0;
     }
-
-    char *copy = strdup(path);          // strtok mutates its input, so copy first
+    char *copy = strdup(path);           // strtok_r mutates its input
     if (copy == NULL) {
         return 0;
     }
-
     int found = 0;
-    for (char *dir = strtok(copy, ":"); dir != NULL; dir = strtok(NULL, ":")) {
+    char *saveptr;
+    for (char *dir = strtok_r(copy, ":", &saveptr);
+         dir != NULL;
+         dir = strtok_r(NULL, ":", &saveptr)) {
         snprintf(out, out_size, "%s/%s", dir, name);
-        if (access(out, X_OK) == 0) {   // exists AND is executable
+        if (access(out, X_OK) == 0) {    // exists AND executable
             found = 1;
-            break;                      // first match wins
+            break;
         }
     }
-
     free(copy);
     return found;
+}
+
+// Split `line` into a NULL-terminated argv. Mutates `line`. Returns argc.
+static int tokenize(char *line, char *argv[], int max_args) {
+    int argc = 0;
+    char *saveptr;
+    for (char *tok = strtok_r(line, " ", &saveptr);
+         tok != NULL && argc < max_args - 1;
+         tok = strtok_r(NULL, " ", &saveptr)) {
+        argv[argc++] = tok;
+    }
+    argv[argc] = NULL;
+    return argc;
+}
+
+static void run_external(char *line) {
+    char *argv[MAX_ARGS];
+    if (tokenize(line, argv, MAX_ARGS) == 0) {
+        return;                          // empty line
+    }
+
+    char path[PATH_MAX];
+    if (!find_in_path(argv[0], path, sizeof(path))) {
+        printf("%s: command not found\n", argv[0]);
+        return;
+    }
+
+    pid_t pid = fork();
+    if (pid == 0) {                      // child
+        execv(path, argv);
+        perror("execv");                 // reached only if execv fails
+        _exit(127);
+    } else if (pid > 0) {                // parent
+        int status;
+        waitpid(pid, &status, 0);        // wait so output stays ordered
+    } else {
+        perror("fork");
+    }
 }
 
 static void execute(char *line) {
@@ -65,8 +105,8 @@ static void execute(char *line) {
         }
         return;
     }
-    // unknown command
-    printf("%s: command not found\n", line);
+    // external command
+    run_external(line);
 }
 
 int main(void) {
