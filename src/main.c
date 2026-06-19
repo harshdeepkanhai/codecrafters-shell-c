@@ -118,6 +118,12 @@ static void execute(char *line) {
     // cd <path>
     if (strncmp(line, "cd ", 3) == 0) {
         const char *dir = line + 3;
+        if (strcmp(dir, "~") == 0) {
+            const char *home = getenv("HOME");
+            if (home != NULL) {
+                dir = home;
+            }
+        }
         if (chdir(dir) != 0) {
             printf("cd: %s: No such file or directory\n", dir);
         }
