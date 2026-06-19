@@ -7,7 +7,7 @@
 
 #define MAX_ARGS 64
 
-static const char *builtins[] = {"echo", "exit", "type", "pwd"};
+static const char *builtins[] = {"echo", "exit", "type", "pwd", "cd"};
 static const size_t builtin_count = sizeof(builtins) / sizeof(builtins[0]);
 
 static int is_builtin(const char *name) {
@@ -112,6 +112,14 @@ static void execute(char *line) {
             printf("%s\n", cwd);
         } else {
             perror("getcwd");
+        }
+        return;
+    }
+    // cd <path>
+    if (strncmp(line, "cd ", 3) == 0) {
+        const char *dir = line + 3;
+        if (chdir(dir) != 0) {
+            printf("cd: %s: No such file or directory\n", dir);
         }
         return;
     }
