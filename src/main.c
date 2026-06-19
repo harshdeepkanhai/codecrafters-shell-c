@@ -12,11 +12,16 @@ int main(int argc, char *argv[]) {
     char cmd[128];
     if (fgets(cmd, sizeof(cmd), stdin) == NULL) {
       return 0;
-    };
+    }
+
 
   
     // Remove the trailing newline
     cmd[strcspn(cmd, "\n")] = '\0';
+
+    if (strcmp(cmd, "exit") == 0) {
+      break;
+    }
 
     printf("%s: command not found\n", cmd);
   }
